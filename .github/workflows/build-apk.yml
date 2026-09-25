@@ -17,10 +17,24 @@ jobs:
       - name: Checkout source payload
         uses: actions/checkout@v4
 
-      - name: Reconstruct Android project
+      - name: Reconstruct verified Android project
         shell: bash
         run: |
-          cat payload/min/part_*.txt | base64 -d > /tmp/done.tar.gz
+          {
+            cat payload/v2/part_000.txt
+            cat payload/v2/part_001.txt
+            cat payload/v2/part_002.txt
+            cat payload/v2/part_003.txt
+            cat payload/v2/part_004.txt
+            cat payload/v2/part_005.txt
+            cat payload/v2/part_006.txt
+            cat payload/v2/fix007_*.txt
+            cat payload/v2/part_008.txt
+            cat payload/v2/part_009.txt
+            cat payload/v2/part_010.txt
+            cat payload/v2/part_011.txt
+          } | base64 -d > /tmp/done.tar.gz
+          echo "e114d8c41838dc46f2e04c19e8b5496e391d93c29b1ac1654a70e85270f14759  /tmp/done.tar.gz" | sha256sum -c -
           mkdir -p /tmp/done-src
           tar -xzf /tmp/done.tar.gz -C /tmp/done-src
           rsync -a --exclude='.git' --exclude='payload' /tmp/done-src/ ./
