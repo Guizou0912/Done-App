@@ -32,10 +32,11 @@ jobs:
           sed -i 's/targetSdk = 36/targetSdk = 33/' app/build.gradle.kts
           sed -i 's/versionCode = 3/versionCode = 5/' app/build.gradle.kts
           sed -i 's/versionName = "1.1.0"/versionName = "1.1.2"/' app/build.gradle.kts
-          python3 -c 'from pathlib import Path; p=Path("app/build.gradle.kts"); s=p.read_text(); s=s.replace("    signingConfigs {\\n", "    signingConfigs {\\n        getByName(\\\"debug\\\") {\\n            storeFile = file(System.getProperty(\\\"user.home\\\") + \\\"/.android/debug.keystore\\\")\\n            storePassword = \\\"android\\\"\\n            keyAlias = \\\"androiddebugkey\\\"\\n            keyPassword = \\\"android\\\"\\n            enableV1Signing = true\\n            enableV2Signing = true\\n            enableV3Signing = false\\n            enableV4Signing = false\\n        }\\n"); s=s.replace("    buildFeatures {\\n", "    packaging {\\n        jniLibs {\\n            useLegacyPackaging = true\\n        }\\n    }\\n\\n    buildFeatures {\\n"); p.write_text(s)'
+          python3 -c 'from pathlib import Path; p=Path("app/build.gradle.kts"); s=p.read_text(); n=chr(10); a="    signingConfigs {"+n; b="    signingConfigs {"+n+"        getByName(\\\"debug\\\") {"+n+"            storeFile = file(System.getProperty(\\\"user.home\\\") + \\\"/.android/debug.keystore\\\")"+n+"            storePassword = \\\"android\\\""+n+"            keyAlias = \\\"androiddebugkey\\\""+n+"            keyPassword = \\\"android\\\""+n+"            enableV1Signing = true"+n+"            enableV2Signing = true"+n+"            enableV3Signing = false"+n+"            enableV4Signing = false"+n+"        }"+n; s=s.replace(a,b,1); a2="    buildFeatures {"+n; b2="    packaging {"+n+"        jniLibs {"+n+"            useLegacyPackaging = true"+n+"        }"+n+"    }"+n+n+"    buildFeatures {"+n; s=s.replace(a2,b2,1); p.write_text(s)'
           grep -q 'applicationId = "com.chezguizou.done.compat"' app/build.gradle.kts
           grep -q 'enableV1Signing = true' app/build.gradle.kts
           grep -q 'useLegacyPackaging = true' app/build.gradle.kts
+          sed -n '1,110p' app/build.gradle.kts
 
       - name: Configure stable debug signing
         shell: bash
