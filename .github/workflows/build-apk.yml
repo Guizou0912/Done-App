@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  build-debug-apk:
+  build-compat-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout source payload
         uses: actions/checkout@v4
 
-      - name: Reconstruct verified Done 1.1.0 project
+      - name: Reconstruct Done project
         shell: bash
         run: |
           cat payload/local110/part_*.txt | base64 -d > /tmp/done.tar.gz
@@ -26,25 +26,19 @@ jobs:
           tar -xzf /tmp/done.tar.gz -C /tmp/done-src
           rm -rf app gradle gradlew gradlew.bat build.gradle.kts settings.gradle.kts gradle.properties
           rsync -a --exclude='.git' --exclude='payload' --exclude='.github' /tmp/done-src/ ./
-          test -f settings.gradle.kts
-          test -f app/build.gradle.kts
           sed -i 's/applicationId = "com.aistudio.done.kpqmzx"/applicationId = "com.chezguizou.done.compat"/' app/build.gradle.kts
           sed -i 's/targetSdk = 36/targetSdk = 33/' app/build.gradle.kts
           sed -i 's/versionCode = 3/versionCode = 5/' app/build.gradle.kts
           sed -i 's/versionName = "1.1.0"/versionName = "1.1.2"/' app/build.gradle.kts
-          python3 -c 'from pathlib import Path; p=Path("app/build.gradle.kts"); s=p.read_text(); n=chr(10); a="    signingConfigs {"+n; b="    signingConfigs {"+n+"        getByName(\\\"debug\\\") {"+n+"            storeFile = file(System.getProperty(\\\"user.home\\\") + \\\"/.android/debug.keystore\\\")"+n+"            storePassword = \\\"android\\\""+n+"            keyAlias = \\\"androiddebugkey\\\""+n+"            keyPassword = \\\"android\\\""+n+"            enableV1Signing = true"+n+"            enableV2Signing = true"+n+"            enableV3Signing = false"+n+"            enableV4Signing = false"+n+"        }"+n; s=s.replace(a,b,1); a2="    buildFeatures {"+n; b2="    packaging {"+n+"        jniLibs {"+n+"            useLegacyPackaging = true"+n+"        }"+n+"    }"+n+n+"    buildFeatures {"+n; s=s.replace(a2,b2,1); p.write_text(s)'
           grep -q 'applicationId = "com.chezguizou.done.compat"' app/build.gradle.kts
-          grep -q 'enableV1Signing = true' app/build.gradle.kts
-          grep -q 'useLegacyPackaging = true' app/build.gradle.kts
-          sed -n '1,110p' app/build.gradle.kts
 
-      - name: Configure stable debug signing
+      - name: Configure signing key
         shell: bash
         run: |
           mkdir -p "$HOME/.android"
-          base64 -d payload/local110/done-stable-debug.keystore.b64 > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          base64 -d payload/local110/done-stable-debug.keystore.b64 > "$HOME/.android/done-test.keystore"
+          chmod 600 "$HOME/.android/done-test.keystore"
+          keytool -list -keystore "$HOME/.android/done-test.keystore" -storepass android -alias androiddebugkey
 
       - name: Set up Java 21
         uses: actions/setup-java@v5
@@ -52,44 +46,55 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Use preinstalled Gradle
+      - name: Check Gradle
         shell: bash
         run: gradle --version
 
-      - name: Configure Android SDK API 36
+      - name: Configure Android SDK
         shell: bash
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
-          echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
-          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           SDKMANAGER=/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Build debug APK
+      - name: Build unsigned release APK
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        run: gradle --no-daemon clean assembleDebug --stacktrace
-
-      - name: Verify APK compatibility and signatures
         shell: bash
         run: |
-          APK=app/build/outputs/apk/debug/app-debug.apk
+          gradle --no-daemon clean assembleRelease --stacktrace
+          test -f app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Align and sign for maximum compatibility
+        shell: bash
+        run: |
           BT=/usr/local/lib/android/sdk/build-tools/36.0.0
-          test -f "$APK"
-          ls -lh "$APK"
-          sha256sum "$APK"
-          "$BT/aapt2" dump badging "$APK" | head -20
+          IN=app/build/outputs/apk/release/app-release-unsigned.apk
+          ALIGNED=/tmp/Done-1.1.2-aligned.apk
+          OUT=app/build/outputs/apk/release/Done-1.1.2-compat.apk
+          "$BT/zipalign" -f -v 4 "$IN" "$ALIGNED"
+          "$BT/apksigner" sign             --ks "$HOME/.android/done-test.keystore"             --ks-key-alias androiddebugkey             --ks-pass pass:android             --key-pass pass:android             --v1-signing-enabled true             --v2-signing-enabled true             --v3-signing-enabled false             --v4-signing-enabled false             --out "$OUT"             "$ALIGNED"
+          test -f "$OUT"
+
+      - name: Verify package and signatures
+        shell: bash
+        run: |
+          APK=app/build/outputs/apk/release/Done-1.1.2-compat.apk
+          BT=/usr/local/lib/android/sdk/build-tools/36.0.0
           "$BT/zipalign" -c -v 4 "$APK"
           "$BT/apksigner" verify --verbose --print-certs "$APK"
           "$BT/apksigner" verify --min-sdk-version 24 "$APK"
+          "$BT/aapt2" dump badging "$APK" | head -30
+          sha256sum "$APK"
+          ls -lh "$APK"
 
-      - name: Upload Done APK
+      - name: Upload Done compatibility APK
         uses: actions/upload-artifact@v4
         with:
           name: Done-1.1.2-compat-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/release/Done-1.1.2-compat.apk
           if-no-files-found: error
           retention-days: 14
